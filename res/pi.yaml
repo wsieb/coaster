@@ -1,0 +1,2015 @@
+
+
+swagger: '2.0'
+info:
+  version: 0.0.19
+  title: 'POSTIDENT Standard Connect & Result API'
+
+  description: 'The POSTIDENT SCR API lets you start a new identification case 
+and retrieve the results<br>    <br>    ------------------------------------------ Changes in Release 3.6 ------------------------------------------<br>    20160812 new object additionalDataVideo incl. auditTrail added to 
+identificationResult- os<br>    20160830 auditTrailItemResult changed to current concept discussed with 
+phoenix - jck<br>    20160909 field result in auditTrailItem renamed to successful - jck<br>    20160915 auditTrail instead of audittrail; field successful in 
+auditTrailItem removed - rne<br>    ------------------------------------------ Planned Changes in Release 
+3.7 ------------------------------------------<br>    20161007 orderData/processDataProvided with new parameter bankCheck - 
+rne<br>    20161007 new object bankCheck added to identificationResult - rne<br>    20161018 remove includeBinaryData and includeResultPDF from 
+/{clientId}/cases list call - cbu<br>    20161018 remove includeBinaryData and includeResultPDF from 
+/{clientId}/cases/full list call - cbu<br>    20161021 removed bankCheck from orderData/processDataProvided and 
+identificationResult - jck<br>    20161024 removed value from auditTrailItemResult - cbu<br>    20161212 fixed Bug on comment in caseOrderResponse - cbu<br>    ------------------------------------------ Changes in Release 
+3.9 ------------------------------------------<br>    20170207 added idCardReaderCheck under additionalDataBasic for 
+/{clientId}/cases call - jr<br>    20170208 added error response code 400 to cases/archive - nk<br>    20170406 added new Counter and Timestamp for Coupon Request by App - 
+cbu<br>    20170427 added identificationServiceCenter,identificationAgentAlias, 
+identReviewServiceCenter and identReviewAgentAlias to 
+additionalDataVideoResul - nk<br>    20170427 added postOffice and checkoutNote to additionalDataBasicResult - 
+nk<br>    20170619 added additionalDataNPaResult to identificationResult - cbu<br>    20171019 added resource post /{clientId}/cases/{caseId}/piCouponByFile - 
+cbu<br>    20171019 added additionalDataBasic couponByClientApiRequestCount and 
+couponByClientApiRequestLastTimestamp - cbu<br>    20171024 small changes in post /{clientId}/cases/{caseId}/piCouponByFile 
+responses - cbu<br>    20181213 Bugfix ATARI-19460 - cbu<br>    20180404 recordType piformsignature added in recordResult (ATARI-22793) - 
+rne<br>    20180411 recordTypes userprofile (Lebendbeweis photo) and userDocument 
+(upload npa,) removed beause both are never delivered to clients (only 
+internal use in UIC); recordType matrixcode removed, because obsolete; 
+matrixcode was replaced by recordType picoupon, which is not part of an scr 
+result - rne<br>
+    '
+securityDefinitions:
+  basicAuth:
+    type: basic
+
+security:
+  - basicAuth: []
+
+host: postident-dev.deutschepost.de
+basePath: /api/scr/v1
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+
+
+##
+## Ressource cases (identifications)
+##
+
+
+  /{clientId}/cases:
+
+    post:
+      tags:
+        - 1_start
+      summary: 'Start a new case.'
+      description: 'Provide configuration information and initial data if 
+available. The response object contains the new case ID and URLs to 
+start/restart the case.'
+      operationId: createCase
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Provided by Deutsche Post. Uniquely identifying your access to the API.
+          required: true
+        - name: orderData
+          in: body
+          description: Your configuration and initial data to start a case
+          schema:
+            $ref: '#/definitions/orderData'
+            required: true
+      responses:
+        '201':
+          description: 'Created<br>
+            The case was successfully created'
+          schema:
+            type: object
+            $ref: '#/definitions/caseOrderResponse'
+          headers:
+            x-Location:
+              description: 'Relative URL pointing to corresponding result resource<br> example /api/v1/4711/cases/112233445'
+              type: string
+        '400':
+          description: 'Bad request<br>
+            Invalid order data, e.g.<br>
+              - JSON agreement violated<br>
+              - Mandatory field missing<br>
+              - Field wrongly formatted<br>
+              - Field value too long<br> See the â€žkeyâ€œ field of the error json to see which field is wrong'
+          schema:
+            $ref: '#/definitions/errors'
+        '401':
+          description: 'Unauthorized<br>
+            Wrong or missing authorization key, e.g.<br>
+            - Wrong or missing username or password<br>
+            - Clientid not found or not configured for usage of Standard Connect'
+        '409':
+          description: 'Conflict: Reference ID not unique<br>
+            Value of field referenceId is leading to a case, which already exists. A POST with an existing referenceId is not possible'
+          schema:
+            $ref: '#/definitions/errors'
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: CreateNewCase1
+          parameters: 
+            clientId: "70000004503701"
+            orderData: '{
+                        "customData": {
+                          "custom1": "custom1",
+                          "custom2": "custom2",
+                          "custom3": "custom3",
+                          "custom4": "custom4",
+                          "custom5": "custom5"
+                        }
+                      }'
+          expectedresponse: 201
+
+    get:
+      tags:
+        - 2_result
+      summary: Get identification results for a client ID (simple).
+      description: 'Returns a list of your cases. By default only closed and 
+unarchived cases without binary data are included. Each case contains only its 
+primary identification (simple). The list operation will return a maximum 
+number of 1000 cases per request; a Http-ResponseHeader 
+â€žX-PARTIAL-DELIVERYâ€œ will be shown, whether there are additional cases 
+available (â€žX-PARTIAL-DELIVERYâ€œ = â€žtrueâ€œ).'
+      operationId: getcases
+      produces:
+        - application/json
+        - application/xml
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API.
+          required: true
+        - name: new
+          in: query
+          type: string
+          description: 'If true, cases with new status are included.<br>
+              Default: false.<br>'
+          default: 'false'
+        - name: inProgress
+          in: query
+          type: string
+          description: 'If true, cases with in progress status are 
+included.<br>
+              Default: false.<br>'
+          default: 'false'
+        - name: closed
+          in: query
+          type: string
+          description: 'If true, cases with closed status and without archived 
+flag are included.<br>
+              Default: true.<br>'
+          default: 'true'
+        - name: archived
+          in: query
+          type: string
+          description: 'If true, cases with closed status and with archived 
+flag are included.<br>
+              Default: false.<br>'
+          default: 'false'
+        - name: createdFrom
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with creation date greater or equal 
+than createdFrom are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+          default: 'null'
+        - name: createdUntil
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with creation date lower than 
+createdUntil are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+          default: 'null'
+        - name: closedFrom
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with closed date greater or equal than 
+closedFrom are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+          default: 'null'
+        - name: closedUntil
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with closed date lower than 
+closedUntil are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+        - name: x-scr-alg
+          in: header
+          type: string
+          description: 'Algorithm for result encryption <br>
+            To use an asymmetric RSA based public key encryption choose one of 
+the following values:<br>
+            - RSA1_5 (RSAES-PKCS1-V1_5 - RFC 3447) <br>
+            - RSA-OAEP (RSAES using Optimal Asymmetric Encryption Padding 
+(OAEP) - RFC 3447)<br>'
+          enum:
+            - ''
+            - 'RSA1_5'
+            - 'RSA-OAEP'
+        - name: x-scr-enc
+          in: header
+          type: string
+          description: 'Specify an AES encryption method for symmetric payload 
+encryption. Available methods:<br>
+            - A128CBC-HS256, key size 256 bit<br>
+            - (A192CBC-HS384),key size 384 bit<br>
+            - A256CBC-HS512,key size 512 bit<br>
+            - A128GCM,key size 128 bit<br>
+            - (A192GCM),key size 192 bit<br>
+            - A256GCM key size 256 bit'
+          enum:
+            - ''
+            - 'A128CBC-HS256'
+            - 'A192CBC-HS384'
+            - 'A256CBC-HS512'
+            - 'A128GCM'
+            - 'A192GCM'
+            - 'A256GCM'
+        - name: x-scr-key
+          in: header
+          type: string
+          description: 'Submit here the Base64 encoded key for content 
+encryption. <br>
+            To use RSA public key encryption you have to submit a RSA public 
+key with a size of 512, 124 or 2048 Bits.<br>
+            Take care, that the 512 RSA public key doesnt support larger 
+ContentEncryptionKeys.<br>'
+        - name: x-scr-keyhash
+          in: header
+          type: string
+          description: 'Contains the HMAC HmacSHA256 Hash of the binary 
+encryption key. Use your PostIdent DataPassword to calculate the 
+x-scr-keyhash.'
+
+
+      responses:
+        '200':
+          description: 'Ok<br>
+            List of cases'
+          schema:
+              #title: cases
+              type: array
+              items:
+                #title: case
+                $ref: '#/definitions/piCaseResultSimple'
+        '401':
+          description: Unauthorized
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: GetSimpleCases
+          parameters: 
+            clientId: "70000004503701"
+          expectedresponse: 200
+
+  /{clientId}/cases/full:
+
+    get:
+      tags:
+        - 2_result
+      summary: Get identification results for a client ID (full).
+      description: 'Returns a list of your cases. By default only closed and 
+unarchived cases without binary data are included. Each case contains all of 
+its identifications (full). The list operation will return a maximum number of 
+1000 cases per request (note: in discussion; final limits may vary); a 
+Http-ResponseHeader â€žX-PARTIAL-DELIVERYâ€œ will be shown, whether there are 
+additional cases available (â€žX-PARTIAL-DELIVERYâ€œ = â€žtrueâ€œ).'
+      operationId: getcasesfull
+      produces:
+        - application/json
+        - application/xml
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API.
+          required: true
+        - name: new
+          in: query
+          type: string
+          description: 'If true, cases with new status are included.<br>
+              Default: false.<br>'
+          default: 'false'
+        - name: inProgress
+          in: query
+          type: string
+          description: 'If true, cases with in progress status are 
+included.<br>
+              Default: false.<br>'
+          default: 'false'
+        - name: closed
+          in: query
+          type: string
+          description: 'If true, cases with closed status and without archived 
+flag are included.<br>
+              Default: true.<br>'
+          default: 'true'
+        - name: archived
+          in: query
+          type: string
+          description: 'If true, cases with closed status and with archived 
+flag are included.<br>
+              Default: false.<br>'
+          default: 'false'
+        - name: createdFrom
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with creation date greater or equal 
+than createdFrom are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+          default: 'null'
+        - name: createdUntil
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with creation date lower than 
+createdUntil are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+          default: 'null'
+        - name: closedFrom
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with closed date greater or equal than 
+closedFrom are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+          default: 'null'
+        - name: closedUntil
+          in: query
+          type: string
+          format: timestamp
+          description: 'If given, cases with closed date lower than 
+closedUntil are included.<br>
+              Format: ISO 8601 format, accuracy in seconds, the offset to Zulu 
+time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00<br>
+              default: null.'
+        - name: x-scr-alg
+          in: header
+          type: string
+          description: 'Algorithm for result encryption.<br>
+            To use an asymmetric RSA based public key encryption choose one of 
+the following values:<br>
+            - RSA1_5 (RSAES-PKCS1-V1_5 - RFC 3447) <br>
+            - RSA-OAEP (RSAES using Optimal Asymmetric Encryption Padding 
+(OAEP) - RFC 3447)<br>
+             '
+          enum:
+            - ''
+            - 'RSA1_5'
+            - 'RSA-OAEP'
+        - name: x-scr-enc
+          in: header
+          type: string
+          description: 'Specify an AES encryption method for symmetric payload 
+encryption. Available methods:<br>
+            - A128CBC-HS256, key size 256 bit<br>
+            - (A192CBC-HS384),key size 384 bit<br>
+            - A256CBC-HS512,key size 512 bit<br>
+            - A128GCM,key size 128 bit<br>
+            - (A192GCM),key size 192 bit<br>
+            - A256GCM key size 256 bit'
+          enum:
+            - ''
+            - 'A128CBC-HS256'
+            - 'A192CBC-HS384'
+            - 'A256CBC-HS512'
+            - 'A128GCM'
+            - 'A192GCM'
+            - 'A256GCM'
+        - name: x-scr-key
+          in: header
+          type: string
+          description: 'Submit here the Base64 encoded key for content 
+encryption. <br>
+            In case of dir encryption send the key size that meets the size 
+requirements of the requested encryption method.<br>
+            To use RSA public key encryption you have to submit a RSA public 
+key with a size of 512, 124 or 2048 Bits.<br>
+            Take care, that the 512 RSA public key doesnt support larger 
+ContentEncryptionKeys.<br>'
+        - name: x-scr-keyhash
+          in: header
+          type: string
+          description: 'Contains the HMAC HmacSHA256 Hash of the binary 
+encryption key. Use your PostIdent DataPassword to calculate the 
+x-scr-keyhash.'
+
+      responses:
+        '200':
+          description: 'Ok<br>
+            List of cases'
+          schema:
+            #title: cases
+            type: array
+            items:
+              #title: case
+              $ref: '#/definitions/piCaseResultFull'
+        '401':
+          description: Unauthorized
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: GetFullCases
+          parameters: 
+            clientId: "70000004503701"
+          expectedresponse: 200
+
+  /{clientId}/cases/{caseId}:
+
+    get:
+      tags:
+        - 2_result
+      summary: Get a single identification result (simple).
+      description: 'Returns a single case. The simple version contains only 
+the primary identification. By default binary data are not included.'
+      operationId: getcase
+      produces:
+        - application/json
+        - application/xml
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API
+          required: true
+        - name: caseId
+          in: path
+          type: string
+          description: ID of case that needs to be fetched
+          required: true
+        - name: includeResultPdf
+          in: query
+          type: string
+          description: 'If true, result pdfs are included in records.<br>
+            Default: false.'
+          default: 'false'
+        - name: includeBinaryData
+          in: query
+          type: string
+          description: 'If true, binary data (images, audio, etc.) is included 
+in records.<br>
+            Default: false.'
+          required: false
+          default: 'false'
+      responses:
+        '200':
+          description: 'Ok<br>
+            Case object with primary identification'
+          schema:
+            title: case
+            type: object
+            $ref: '#/definitions/piCaseResultSimple'
+        '401':
+          description: Unauthorized
+        '404':
+          description: 'Not found<br>
+            Case with caseId not found'
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: GetSimpleCase
+          parameters: 
+            clientId: "70000004503701"
+            caseId: 
+              attribute: 'caseId'
+              use: '1'
+          use:
+            - id: '1'
+              ressource: '/{clientId}/cases'
+              example: 'CreateNewCase1'
+          expectedresponse: 200
+        - name: GetSimpleCaseIncludePdf
+          parameters: 
+            clientId: "70000004503701"
+            includeResultPdf: "true"
+            caseId: 
+              attribute: 'caseId'
+              use: '1'
+          use:
+            - id: '1'
+              ressource: '/{clientId}/cases'
+              example: 'CreateNewCase1'
+          expectedresponse: 200
+        - name: GetSimpleCaseIncludePdfAndBinary
+          parameters: 
+            clientId: "70000004503701"
+            includeResultPdf: "true"
+            includeBinaryData: "true"
+            caseId: 
+              attribute: 'caseId'
+              use: '1'
+          use:
+            - id: '1'
+              ressource: '/{clientId}/cases'
+              example: 'CreateNewCase1'
+          expectedresponse: 200
+        - name: GetNonExistingCase
+          parameters: 
+            clientId: "70000004503701"
+            caseId: '123456'
+          expectedresponse: 404
+
+  /{clientId}/cases/{caseId}/full:
+
+    get:
+      tags:
+        - 2_result
+      summary: Get a single identification result (full).
+      description: 'Returns a single case. The full version contains all 
+identifications. By default binary data are not included.'
+      operationId: getcasefull
+      produces:
+        - application/json
+        - application/xml
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API
+          required: true
+        - name: caseId
+          in: path
+          type: string
+          description: CaseId of the requested case.
+          required: true
+        - name: includeResultPdf
+          in: query
+          type: string
+          description: 'If true, result pdfs are included in records.<br>
+            Default: false.'
+          default: 'false'
+        - name: includeBinaryData
+          in: query
+          type: string
+          description: 'If true, binary data (images, audio, etc.) is included 
+in records.<br>
+            Default: false.'
+          required: false
+          default: 'false'
+      responses:
+        '200':
+          description: 'Ok<br>
+            Case object with all identifications'
+          schema:
+            title: case
+            type: object
+            $ref: '#/definitions/piCaseResultFull'
+        '401':
+          description: Unauthorized
+        '404':
+          description: 'Not found<br>
+            Case with caseId not found'
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: GetFullCase
+          parameters: 
+            clientId: "70000004503701"
+            caseId: 
+              attribute: 'caseId'
+              use: '1'
+          use:
+            - id: '1'
+              ressource: '/{clientId}/cases'
+              example: 'CreateNewCase1'
+          expectedresponse: 200
+
+  /{clientId}/cases/archive:
+    patch:
+      tags:
+        - 3_archive
+      summary: Mark cases as archived.
+      description: 'Use this operation to reduce the length of the case list 
+from the GET cases operation.<br>
+        Affects only closed cases. Cases with other status will be ignored. 
+Already archived cases stay archived.<br>
+        <br>
+        Note: Regardless of the archived flag, all cases will be deleted 
+physically from PI System after a time limit. The time limit is configured 
+with the clientId (max. 150 days).'
+      operationId: archivecases
+      produces:
+        - application/json
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API
+          required: true
+        - name: caseIds
+          in: body
+          required: true
+          description: 'List of caseIds that need to be marked as archived'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: x-scr-alg
+          in: header
+          type: string
+          description: 'Algorithm for result encryption.<br>
+            To use an asymmetric RSA based public key encryption choose one of 
+the following values:<br>
+            - RSA1_5 (RSAES-PKCS1-V1_5 - RFC 3447) <br>
+            - RSA-OAEP (RSAES using Optimal Asymmetric Encryption Padding 
+(OAEP) - RFC 3447)<br>'
+          enum:
+            - ''
+            - 'RSA1_5'
+            - 'RSA-OAEP'
+        - name: x-scr-enc
+          in: header
+          type: string
+          description: 'Specify an AES encryption method for symmetric payload 
+encryption. Available methods:<br>
+            - A128CBC-HS256, key size 256 bit<br>
+            - (A192CBC-HS384),key size 384 bit<br>
+            - A256CBC-HS512,key size 512 bit<br>
+            - A128GCM,key size 128 bit<br>
+            - (A192GCM),key size 192 bit<br>
+            - A256GCM key size 256 bit'
+          enum:
+            - ''
+            - 'A128CBC-HS256'
+            - 'A192CBC-HS384'
+            - 'A256CBC-HS512'
+            - 'A128GCM'
+            - 'A192GCM'
+            - 'A256GCM'
+        - name: x-scr-key
+          in: header
+          type: string
+          description: 'Submit here the Base64 encoded key for content 
+encryption. <br>
+            In case of dir encryption send the key size that meets the size 
+requirements of the requested encryption method.<br>
+            To use RSA public key encryption you have to submit a RSA public 
+key with a size of 512, 124 or 2048 Bits.<br>
+            Take care, that the 512 RSA public key doesnt support larger 
+ContentEncryptionKeys.<br>'
+        - name: x-scr-keyhash
+          in: header
+          type: string
+          description: 'Contains the HMAC HmacSHA256 Hash of the binary 
+encryption key. Use your PostIdent DataPassword to calculate the 
+x-scr-keyhash.'
+
+      responses:
+        '200':
+          description: 'Ok<br>
+            List with updated case status'
+          schema:
+            title: cases
+            type: array
+            items:
+              type: object
+              $ref: '#/definitions/archiveResult'
+        '400':
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors'
+
+        '401':
+          description: Unauthorized
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-amples:
+        - name: ArchiveCaseId
+          parameters: 
+            clientId: "70000004503701"
+            caseIds: 
+              attribute: 'caseId'
+              use: "1"
+              type: "array"
+          use:
+            - id: "1"
+              ressource: '/{clientId}/cases'
+              example: 'CreateNewCase1'
+          expectedresponse: 200
+
+
+  /{clientId}/cases/{caseId}/piCouponByFile:
+
+    post:
+      tags:
+        - 1_start
+      summary: Create a new PI coupon for an existing case
+      description: 'Returns a printable PI coupon or a data matrix code, 
+depending on the setting of your account (clientId)<br>
+        Requirements:<br>
+        - case in status new or in progress<br>
+        - basic identification does not exist yet or is in a suitable status 
+(started, coupon requested, incomplete)<br>
+        - max. limit of PI coupons not reached<br>
+        A basic identification will be created if necessary. Afterwards, the 
+identification will be in status coupon requested.'
+      operationId: getPiCouponByFile
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API
+          required: true
+        - name: caseId
+          in: path
+          type: string
+          description: CaseID of the used case
+          required: true
+      produces:
+        - application/json
+        - application/xml
+      responses:
+        '201':
+          description: 'Ok<br>
+            PI coupon is created'
+          schema:
+            title: piCoupon
+            type: object
+            $ref: '#/definitions/piCouponByFileResponse'
+        '401':
+          description: 'Unauthorized<br>
+            Wrong or missing authorization key (errorcode 90114) or resource 
+is not activated for given clientid (errorcode 90124)'
+          schema:
+            $ref: '#/definitions/errors'
+        '404':
+          description: 'Not found<br>
+            Case with caseId not found'
+        '409':
+          description: 'Confict<br>
+            Basic identification in wrong status (errorcode 90307) or maximum 
+number of possible PI coupons exceeded (errorcode 90308)'
+          schema:
+            $ref: '#/definitions/errors'
+        '410':
+          description: 'Gone<br>
+            Updating a closed case is not possible'
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: NewPICouponForCase1
+          parameters: 
+            clientId: "70000004503701"
+            caseId: 
+              attribute: 'caseId'
+              use: '1'
+          use:
+            - id: '1'
+              ressource: '/{clientId}/cases'
+              example: 'CreateNewCase1'
+          expectedresponse: 200
+
+  /{clientId}/alive:
+    get:
+      tags:
+        - 1_start
+      summary: Run a quick checkup of PI system.
+      description: 'Performs a quick checkup and returns the system status. If 
+PI system runs correctly, the status will be OK. Otherwise the status will be 
+NOK.<br><b>Note:</b> There is a call limit per minute and user.'
+      operationId: isalive
+      security:
+        - basicAuth: []
+      parameters:
+        - name: clientId
+          in: path
+          type: string
+          description: Your client ID for the API
+          required: true
+          x-example: CDA9CBE4
+      produces:
+        - application/json
+        - application/xml
+      responses:
+        '200':
+          description: 'Ok<br>
+            Status object with the current availability'
+          schema:
+            title: case
+            type: object
+            $ref: '#/definitions/piSystemStatus'
+        '401':
+          description: Unauthorized
+        default:
+          description: Error description
+          schema:
+            $ref: '#/definitions/errors'
+      x-examples:
+        - name: CheckClientIdIsAlive
+          parameters: 
+            clientId: "70000004503701"
+          expectedresponse: 200
+        - name: CheckNonExistingClientIsAlive
+          parameters: 
+            clientId: "700asdf004503702"
+          expectedresponse: 401
+
+
+
+
+definitions:
+
+##
+## Definitions for resource case (identifications)
+##
+
+
+  orderData:
+    description: Data provided by client (business customer).
+    type: object
+    properties:
+        customData:
+          description: Optionally transmitted custom data
+          $ref: '#/definitions/customDataProvided'
+        processData:
+          description: Optionally transmitted process data
+          $ref: '#/definitions/processDataProvided'
+        contactDataProvided:
+          description: 'Optionally transmitted contact data'
+          $ref: '#/definitions/contactDataProvided'
+        identificationDocumentProvided:
+          description: 'Optionally transmitted identification document data'
+          $ref: '#/definitions/identificationDocumentProvided'
+        drivingLicenceProvided:
+          description: 'Optionally transmitted driving licence data'
+          $ref: '#/definitions/drivingLicenceProvided'
+
+
+  customDataProvided:
+    description: Custom fields provided by client (business customer).
+    type: object
+    properties:
+        custom1:
+          description: Custom text field in order to pass your own identifiers, labels etc. You will get this information back in the external result data for the client.
+          type: string
+        custom2:
+          description: 'See custom1'
+          type: string
+        custom3:
+          description: 'See custom1'
+          type: string
+        custom4:
+          description: 'See custom1'
+          type: string
+        custom5:
+          description: 'See custom1'
+          type: string
+
+
+  processDataProvided:
+    type: object
+    description: Process related data provided by client (business customer).
+    properties:
+        targetCountry:
+          description: 'Country from which the identification is 
+requested.<br>
+            ISO 3166-1 ALPHA-3.<br>
+            If not provided, PI application will set the default value DEU.'
+          type: string
+        preferredLanguage:
+          description: 'Preferred language of the user.<br>
+            Possible values: DE_DE, EN_UK.<br>
+            If not provided, PI application will set the default value 
+DE_DE.<br>
+            NOTE: EN_UK not yet supported by POSTIDENT portal and app.'
+          type: string
+          enum:
+            - 'DE_DE'
+            - 'EN_UK'
+        webHookUrl:
+          description: 'URL for push notifications back to your application in 
+case of preliminary or final results. The URL will be called via POST request. 
+Parameter is application/json with the body {"caseId"="##caseId##"}'
+          type: string
+        referenceId:
+          description: '<br>
+            For method: basic.<br>
+            Unique id generated by your system to be printed on the PI coupon 
+for an identification in the post office. After the identification in the post 
+office, the referenceId will be used to reassign the result from the post 
+office to the  originating case in the PI application. Otherwise a new case 
+with a new caseId will be created and delivered by the PI application.<br>
+            If not provided, the caseId is automatically used as 
+referenceId.<br>
+            If provided, the referenceId must be unique for the scope of the 
+client ID; if not unique, the case cannot be started in the PI application and 
+you receive http error 409'
+          type: string
+        callbackUrlCouponRequested:
+          description: '<br>
+            For method: basic.<br>
+            Redirect or callback URL for user after download of PI Coupon. 
+Used by POSTIDENT portal or mobile app to display a button for the user back 
+to your application or app. Provide a URL for each POSTIDENT platform that 
+shall display the redirect button. If not provided, the redirect button will 
+not be displayed.<br>
+            Currently supported platforms: none (will be added in a future 
+release)'
+          $ref: '#/definitions/multiPlatformUrl'
+        callbackUrlReviewPending:
+          description: '<br>
+            For methods: photo, video.<br>
+            Redirect or callback URL for user in case of review pending (e.g. 
+after photos sent or videochat between agent and user finished). See first 
+callbackUrl parameter above for more details.<br>
+            Currently supported platform: web'
+          $ref: '#/definitions/multiPlatformUrl'
+        callbackUrlIncomplete:
+          description: '<br>
+            For method: video, started from your own app.<br>
+            Redirect or callback URL for user after incomplete result. See 
+first callbackUrl parameter above for more details.<br>
+            Note: Your app must be able to cope with the incomplete video 
+identification, e.g. offer a re-start of the video method or the start of a 
+new alternative method like POSTIDENT in a post office (basic).<br>
+            Currently supported platforms: ios, android<br>
+            For method: photo<br>
+            Redirect or callback URL for user after incomplete result. Will be 
+included in E-Mail to user in case PI application is responsible for E-Mail 
+communication. See Result Guide for more details<br>
+            Currently supported platform: web'
+          $ref: '#/definitions/multiPlatformUrl'
+        callbackUrlSuccess:
+          description: '<br>
+            For method: npa<br>
+            Redirect or callback URL for user after success result. See first 
+callbackUrl parameter above for more details.<br>
+            Currently supported platform: web<br>
+            For method: photo<br>
+            Redirect or callback URL for user after success result. Will be 
+included in E-Mail to user in case PI application is responsible for E-Mail 
+communication. See Result Guide for more details.
+            Currently supported platform: web'
+          $ref: '#/definitions/multiPlatformUrl'
+        callbackUrlDeclined:
+          description: '<br>
+            For methods: npa, video.<br>
+            Redirect or callback URL for user after declined result. See first 
+callbackUrl parameter above for more details.<br>
+            Currently supported platform: web, ios, android<br>
+            For method: photo<br>
+            Redirect or callback URL for user after declined result. Will be 
+included in E-Mail to user in case PI application is responsible for E-Mail 
+communication. See Result Guide for more details.
+            Currently supported platform: web'
+          $ref: '#/definitions/multiPlatformUrl'
+
+
+  contactDataProvided:
+    description: 'Initial contact data of the user provided by the client 
+(business customer). Some of the parameters are necessary to contact the user 
+during the identification process: salutation, firstName, lastName, 
+mobilePhone, and email.<br> If not provided, the user will be asked by the 
+POSTIDENT system, before he can proceed with the identification process.'
+    type: object
+    properties:
+        salutation:
+          description: 'Supported values: 1 = Mr/Herr, 2 = Mrs/Frau<br>
+            Necessary for the identification process. If not provided, user 
+will be asked.<br>'
+          type: string
+          enum:
+          - '1' # Mr
+          - '2' # Mrs
+        title:
+          description: 'Title as part of the salutation, e.g. "Dr."'
+          type: string
+        firstName:
+          description: 'Necessary for the identification process. If not 
+provided, user will be asked.'
+          type: string
+        lastName:
+          description: 'Necessary for the identification process. If not 
+provided, user will be asked.'
+          type: string
+        mobilePhone:
+          description: 'Country code plus phone number. Blanks are allowed and 
+will be ignored. Examples:<br>
+            - German number: +49171123456789 or +49 171 123456789<br>
+            - US number: +1123456789010 or +1 123 456789010<br>
+            Necessary for the identification process. If not provided, user 
+will be asked.'
+          type: string
+        email:
+          description: 'Necessary for the identification process. If not 
+provided, user will be asked.'
+          type: string
+        epost:
+          type: string
+        address:
+          type: object
+          $ref: '#/definitions/address'
+
+
+  address:
+    type: object
+    properties:
+      streetAddress:
+        description: 'May include street name, house number, Post Office Box'
+        type: string
+      appendix:
+        type: string
+      postalCode:
+        type: string
+      city:
+        type: string
+      country:
+        description: ISO-3166 ALPHA-3 plus RKS for Kosovo
+        type: string
+
+
+  identificationDocumentProvided:
+    description: 'Initial data of the identification document provided by the 
+client (business customer).'
+    type: object
+    properties:
+      type:
+        type: string
+      number:
+        type: string
+      firstName:
+        description: 'All first names as printed on the identification 
+document.'
+        type: string
+      lastName:
+        description: 'Exact last name as printed on identification document; 
+may include title like "Dr."'
+        type: string
+      birthName:
+          description: 'Only if differing from last name.<br>
+            Do not include prefixes like â€žgeb.â€œ or â€žGeboreneâ€œ'
+          type: string
+      birthDate:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      birthPlace:
+          type: string
+      nationality:
+          description: 'ISO-3166 ALPHA-3 plus RKS for Kosovar'
+          type: string
+      address:
+          type: object
+          $ref: '#/definitions/address'
+      dateIssued:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      dateOfExpiry:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      authority:
+          type: string
+      placeOfIssue:
+          type: string
+      countryOfDocument:
+          description: 'ISO-3166 ALPHA-3 plus RKS for Kosovo'
+          type: string
+
+
+  drivingLicenceProvided:
+    description: 'Initial data of the driving licence provided by the client 
+(business customer).'
+    type: object
+    properties:
+      number:
+          type: string
+      firstName:
+          type: string
+      lastName:
+          type: string
+      birthDate:
+          description: 'ISO 8601 format YYYY-MM-DD'
+          type: string
+      birthPlace:
+          type: string
+      drivingLicenceClasses:
+        type: array
+        items:
+          $ref: '#/definitions/drivingLicenceClass'
+      dateIssued:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      dateOfExpiry:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      authority:
+          type: string
+      countryOfDocument:
+          description: 'ISO-3166 ALPHA-3 plus RKS for Kosovo'
+          type: string
+      restrictions:
+          type: string
+
+  piCouponByFileResponse:
+    description: 'Returns all needed data of a PI coupon'
+    type: object
+    properties:
+      couponId:
+        type: string
+        description: 'unique ID of the PI coupon'
+      caseId:
+        type: string
+        description: 'Case ID to which PI coupon belongs; printed on printable 
+PI coupons'
+      validUntil:
+        type: string
+        description: 'Date and time until which case ID will expire.ISO 8601 
+format, accuracy in seconds, the offset to Zulu time at the end, e.g. 
+2016-01-28T23:59:59+01:00'
+      referenceId:
+        type: string
+        description: 'Reference ID to which PI coupon belongs ; printed on 
+printable PI coupons'
+      accountingNumber:
+        type: string
+        description: 'Accounting number to which PI coupon belongs;  printed 
+on printable PI coupons'
+      couponFileType:
+        type: string
+        enum:
+          - 'printable'
+          - 'datamatrixcode'
+        description: 'printable | datamatrixcode; type has to be configured in 
+client account (bc configuration)'
+      mimeType:
+        type: string
+        description: 'will be application-pdf (printable file) or image-png 
+(datamatrixcode file)'
+      fileName:
+        type: string
+        description: 'will be ##caseId##pi-coupon##coupon file type##.file 
+extension##;example: 12345678ABCD_pi-coupon_printable.pdf'
+      fileSize:
+        type: integer
+        description: 'size in bytes'
+      documentData:
+        type: string
+        description: 'base64 binary document data'
+
+  caseOrderResponse:
+    description: Response after a successful start or update of a case. The response object contains a new case ID and URLs to start/restart the case.
+    type: object
+    required:
+      - caseId
+      - validUntil
+    properties:
+      caseId:
+        description: Unique ID for your case
+        type: string
+      validUntil:
+        description: 'Date and time until the created case will be expired if 
+user does not proceed. <br>
+          ISO 8601 format, accuracy in seconds, the offset to Zulu time at the 
+end, e.g. 2016-01-28T23:59:59+01:00'
+        type: string
+      webStart:
+         $ref: '#/definitions/webStart'
+      iosStart:
+         $ref: '#/definitions/appStart'
+      androidStart:
+         $ref: '#/definitions/appStart'
+
+
+  piCaseResultSimple:
+    description: Case result containing only the primary identification (simple).
+    required:
+      - caseId
+      - caseStatus
+      - orderData
+    type: object
+    properties:
+      caseId:
+        type: string
+      caseStatus:
+         $ref: '#/definitions/caseStatusResult'
+      orderData:
+         $ref: '#/definitions/orderData'
+      contactData:
+         $ref: '#/definitions/contactDataResult'
+      primaryIdent:
+         description: 'Identification with the most progress'
+         $ref: '#/definitions/identificationResult'
+      accountingData:
+         $ref: '#/definitions/accountingData'
+
+
+  piCaseResultFull:
+    description: Case result containing all identifications (full).
+    required:
+      - caseId
+      - caseStatus
+      - orderData
+    type: object
+    properties:
+      caseId:
+        type: string
+      caseStatus:
+         $ref: '#/definitions/caseStatusResult'
+      orderData:
+         $ref: '#/definitions/orderData'
+      contactData:
+         $ref: '#/definitions/contactDataResult'
+      identifications:
+        type: array
+        items:
+          $ref: '#/definitions/identificationResult'
+      accountingData:
+         $ref: '#/definitions/accountingData'
+
+
+  archiveResult:
+    description: Archive result containing caseIds and caseStatus of cases requested for archive.
+    required:
+      - caseId
+      - caseStatus
+    type: object
+    properties:
+      caseId:
+        type: string
+      caseStatus:
+         $ref: '#/definitions/caseStatusResult'
+
+
+  caseStatusResult:
+    description: 'External status of the case'
+    required:
+      - status
+      - archived
+      - created
+    type: object
+    properties:
+      status:
+        description: 'Case status'
+        type: string
+        enum:
+          - 'new'
+          - 'in progress'
+          - 'closed'
+      archived:
+        description: 'Flag for archived case<br>
+          true: is archived<br>
+          false: is not'
+        type: boolean
+      validUntil:
+        description: 'Date and time until which case ID / URL will expire.<br> ISO 8601 format, accuracy in seconds, the offset to Zulu time at the end, e.g. 2016-01-28T23:59:59+01:00'
+        type: string
+      created:
+        description: 'Creation time of the case'
+        type: string
+        format: timestamp
+      modified:
+        description: 'Last modification time of the case'
+        type: string
+        format: timestamp
+
+
+  contactDataResult:
+    description: 'Possibly updated by the user during the identification 
+process.'
+    type: object
+    properties:
+        salutation:
+          type: object
+          $ref: '#/definitions/resultValue'
+        title:
+          type: object
+          $ref: '#/definitions/resultValue'
+        firstName:
+          type: object
+          $ref: '#/definitions/resultValue'
+        lastName:
+          type: object
+          $ref: '#/definitions/resultValue'
+        mobilePhone:
+          type: object
+          $ref: '#/definitions/resultValue'
+        email:
+          type: object
+          $ref: '#/definitions/resultValue'
+        epost:
+          type: object
+          $ref: '#/definitions/resultValue'
+        address:
+          type: object
+          $ref: '#/definitions/addressResult'
+
+
+  addressResult:
+    type: object
+    properties:
+      streetAddress:
+        type: object
+        $ref: '#/definitions/resultValue'
+      appendix:
+        type: object
+        $ref: '#/definitions/resultValue'
+      postalCode:
+        type: object
+        $ref: '#/definitions/resultValue'
+      city:
+        type: object
+        $ref: '#/definitions/resultValue'
+      country:
+        type: object
+        $ref: '#/definitions/resultValue'
+      addressMatch:
+        type: object
+        $ref: '#/definitions/addressMatchResult'
+
+
+  addressMatchResult:
+    description: 'Result of address match against the postal reference file'
+    type: object
+    properties:
+      mailRedirectionDomestic:
+        type: boolean
+        description: 'There is an active mail redirection to a domestic 
+address'
+      mailRedirectionInternational:
+        type: boolean
+        description: 'There is an active mail redirection to an international 
+address'
+      undeliverable:
+        type: boolean
+        description: 'Address is marked as undeliverable'
+      addresseeDeceased:
+        type: boolean
+        description: 'Addressee could be deceased'
+
+
+  identificationResult:
+    description: 'Result of a single idenfification'
+    required:
+      - identificationMethod
+      - identificationStatus
+    type: object
+    properties:
+      identificationMethod:
+        $ref: '#/definitions/identificationMethod'
+      identificationStatus:
+        $ref: '#/definitions/identificationStatusResult'
+      identificationDocument:
+        $ref: '#/definitions/identificationDocumentResult'
+      drivingLicence:
+        $ref: '#/definitions/drivingLicenceResult'
+      records:
+        description: 'Files created or used during the identification 
+process.'
+        type: array
+        items:
+          $ref: '#/definitions/recordResult'
+      additionalDataBasic:
+        $ref: '#/definitions/additionalDataBasicResult'
+      additionalDataVideo:
+        $ref: '#/definitions/additionalDataVideoResult'
+      additionalDataNPa:
+        $ref: '#/definitions/additionalDataNPaResult'
+
+
+  identificationStatusResult:
+    description: 'External status of the identification'
+    required:
+      - status
+      - created
+    type: object
+    properties:
+      status:
+        description: 'Identification status'
+        type: string
+        enum:
+          - 'started' #501
+          - 'review pending' #505, 506, 507
+          - 'incomplete' #530
+          - 'success' #510
+          - 'declined' #520
+      subStatus:
+        description: 'Substatus describing the incomplete and declined status 
+on a more detailed level.<br>
+          Example: 11 = fraud suspicion is a possible substatus for declined.'
+        $ref: '#/definitions/statusValue'
+      subStatusReason:
+        description: 'Additional information of agent regarding fraud 
+suspicion.<br>
+          Example: 110 = identification document probably forged'
+        $ref: '#/definitions/statusValue'
+      identificationTime:
+        description: 'Time when agent or PI system decides on final result 
+(success or declined). Otherwise null. ISO 8601 format, accuracy in seconds, 
+the offset to Zulu time Â±hh:mm at the end, e.g. 2016-01-28T23:59:59+01:00'
+        type: string
+        format: date-time
+      created:
+        description: 'Creation time of the identification'
+        type: string
+        format: timestamp
+      modified:
+        description: 'Last modification time of the identification'
+        type: string
+        format: timestamp
+
+
+  statusValue:
+    type: object
+    properties:
+      code:
+        description: Use the code value to determine the status programmatically
+        type: integer
+      description:
+        description: Human readable version
+        type: string
+
+
+  identificationDocumentResult:
+    description: 'Result data of the identificationDocument<br>
+      <br>
+      TODO:<br>
+      Je nach Klasse mÃ¼ssen die auszuliefernden Felder eingeschrÃ¤nkt werden:
+      - GwG: alle incl. records
+      - Standard: nur firstName, lastName, birthName, birthDate, nationality, 
+streetAddress, postalCode, city, country; (entspricht ID-Card #4)
+      - Mobility: nur number, firstName, lastName, birthName, birthDate, 
+nationality, streetAddress, postalCode, city, country, dateOfExpiry<br>
+      <br>
+      FRAGE: WIE MACHEN WIR DAS? Brauchen wir eine Dopplung in 
+IdentificationDocumentInternal (komplett) und IdentificationDocumentResult 
+(eingeschrÃ¤nkt)?'
+    type: object
+    properties:
+      type:
+          type: object
+          $ref: '#/definitions/resultValue'
+      number:
+          type: object
+          $ref: '#/definitions/resultValue'
+      firstName:
+          description: 'All first names as printed on the identification 
+document.'
+          type: object
+          $ref: '#/definitions/resultValue'
+      lastName:
+          description: 'Exact last name as printed on identification document; 
+may include title like "Dr."'
+          type: object
+          $ref: '#/definitions/resultValue'
+      birthName:
+          type: object
+          $ref: '#/definitions/resultValue'
+      birthDate:
+          type: object
+          $ref: '#/definitions/resultValue'
+      birthPlace:
+          type: object
+          $ref: '#/definitions/resultValue'
+      nationality:
+          type: object
+          $ref: '#/definitions/resultValue'
+      address:
+          description: 'Only if part of the identification document; otherwise 
+null'
+          type: object
+          $ref: '#/definitions/addressResult'
+      dateIssued:
+          type: object
+          $ref: '#/definitions/resultValue'
+      dateOfExpiry:
+          type: object
+          $ref: '#/definitions/resultValue'
+      authority:
+          type: object
+          $ref: '#/definitions/resultValue'
+      placeOfIssue:
+          type: object
+          $ref: '#/definitions/resultValue'
+      countryOfDocument:
+          type: object
+          $ref: '#/definitions/resultValue'
+      records:
+        description: 'Files created or used during the identification 
+process.'
+        type: array
+        items:
+          $ref: '#/definitions/recordResult'
+
+
+  drivingLicenceResult:
+    description: 'Result data of the drivingLicence<br>
+      <br>
+      Hinweis:<br>
+      Momentan werden fÃ¼r die Klasse Mobility alle Felder incl. Records 
+ausgeliefert<br>'
+    type: object
+    properties:
+      number:
+          type: object
+          $ref: '#/definitions/resultValue'
+      firstName:
+          type: object
+          $ref: '#/definitions/resultValue'
+      lastName:
+          type: object
+          $ref: '#/definitions/resultValue'
+      birthDate:
+          description: 'ISO 8601 format YYYY-MM-DD'
+          type: string
+      birthPlace:
+          type: string
+      drivingLicenceClasses:
+        type: array
+        items:
+          $ref: '#/definitions/drivingLicenceClassResult'
+      dateIssued:
+          type: object
+          $ref: '#/definitions/resultValue'
+      dateOfExpiry:
+          type: object
+          $ref: '#/definitions/resultValue'
+      authority:
+          type: object
+          $ref: '#/definitions/resultValue'
+      countryOfDocument:
+          type: object
+          $ref: '#/definitions/resultValue'
+      restrictions:
+          type: string
+          $ref: '#/definitions/resultValue'
+      records:
+        description: 'Files created or used during the identification 
+process.'
+        type: array
+        items:
+          $ref: '#/definitions/recordResult'
+
+
+  drivingLicenceClassResult:
+    type: object
+    properties:
+      className:
+          type: object
+          $ref: '#/definitions/resultValue'
+      dateIssued:
+          type: object
+          $ref: '#/definitions/resultValue'
+      dateOfExpiry:
+          type: object
+          $ref: '#/definitions/resultValue'
+      restrictions:
+          type: object
+          $ref: '#/definitions/resultValue'
+
+
+  recordResult:
+    description: 'Image, video, audio or other media file created or used 
+during the identification process.'
+    type: object
+    required:
+      - mimeType
+    properties:
+      recordId:
+        type: string
+        description: PI system-wide unique id of the record
+      belongsTo:
+        type: string
+        enum:
+          - 'method'
+          - 'identificationdocument'
+          - 'drivinglicence'
+      type:
+        description: 'Short description of content; part of filename'
+        type: string
+        enum:
+          # method
+          - 'result' # result pdf complete
+          - 'resultdata' # result pdf data
+          - 'resultimages' # result pdf images
+          - 'userface' # image
+          - 'scan' # scanned document, e.g. PI form
+          - 'piformsignature' # scanned signature from PI form for basic, comfort and specialIdent
+          # identificationDocument
+          - 'idfrontside'
+          - 'idbackside'
+          - 'idimage' # if other or unknown
+          - 'idsignature' # scanned signature from document
+          # drivingLicence
+          - 'dlfrontside'
+          - 'dlbackside'
+          - 'dlimage' # if other or unknown
+      validationStatus:
+        type: string
+        enum:
+          - 'unchecked'
+          - 'valid'
+          - 'invalid'
+      validationSubStatus:
+        type: string
+        description: 'Describes status in more detail if necessary'
+        enum:
+          - 'document not supported'
+          - 'document not identifiable'
+          - 'document expired'
+          - 'fraud suspicion'
+          - 'abuse'
+          - 'person not identifiable'
+          - 'bad exposure'
+          - 'too blurry'
+          - 'partly concealed'
+          - 'picture detail not sufficient'
+      validationRemark:
+        type: string
+        description: 'Additional note of agent on sub status'
+      mimeType:
+        type: string
+        description: 'Required for display and file extension in file name'
+      fileName:
+        type: string
+        description: 'Format:<br>- result pdf: 
+##caseId##_##type##method##.##file extension##<br>- all other: 
+##caseId##_##type##.##file extension##<br>To avoid duplicates a sequential 
+number may be added<br>Examples: 12345678ABCD_result_video.jpg, 
+12345678ABCD_idimage.jpg, 12345678ABCD_idimage_2.jpg'
+      documentData:
+        type: string
+        format: byte
+        description: base64 binary document data
+
+
+  additionalDataBasicResult:
+    description: 'Additional data of identification method "basic". 
+<br><b>Will be implemented by <a 
+href="https://tasktracker.clear-mail.de/tracker/browse/ATARI-14713">ATARI-14713</a>'
+    type: object
+    properties:
+      couponDownloadCount:
+        description: Counter of coupon downloads
+        type: integer
+      couponDownloadLastTimestamp:
+        description: Timestamp of last coupon download
+        type: string
+        format: timestamp
+      couponByPiAppRequestCount:
+        description: Counter of coupon request by app
+        type: integer
+      couponByPiAppRequestLastTimestamp:
+        description: Timestamp of last coupon request by app
+        type: string
+        format: timestamp
+      couponByEmailRequestCount:
+        description: Counter of coupon by email requests
+        type: integer
+      couponByEmailRequestLastTimestamp:
+        description: Timestamp of last coupon by email request
+        type: string
+        format: timestamp
+      couponByMailRequestCount:
+        description: Counter of coupon by mail requests
+        type: integer
+      couponByMailRequestLastTimestamp:
+        description: Timestamp of last coupon by mail request
+        type: string
+        format: timestamp
+      couponByClientApiRequestCount:
+        description: Counter of coupon by client api requests
+        type: integer
+      couponByClientApiRequestLastTimestamp:
+        description: Timestamp of last coupon by business customer api request
+        type: string
+        format: timestamp
+      postOffice:
+         type: string
+         description: 'id of postal retail outlet, where the identification 
+took place'
+      checkoutNote:
+         type: string
+         description: 'additional information about the identification case, 
+e.g. 85014869 3013'
+      idCardReaderCheck:
+        type: object
+        $ref: '#/definitions/idCardReaderCheck'
+
+  additionalDataVideoResult:
+    description: 'Additional data of identification method video.'
+    type: object
+    required:
+      - auditTrailItems
+    properties:
+      identificationServiceCenter:
+         type: string
+         description: 'service center, where the identification took place, 
+e.g. 1 DP CSC GmbH, Location Flensburg'
+      identificationAgentAlias:
+         type: string
+         description: 'shorthand symbol of the agent'
+      identReviews:
+         type: array
+         items:
+           $ref: '#/definitions/identReviewResultItem'
+      auditTrailItems:
+         type: array
+         items:
+           $ref: '#/definitions/auditTrailItemResult'
+
+  additionalDataNPaResult:
+    description: 'Additional data of identification method "npa". <br><b>Will 
+be implemented by <a 
+href="https://tasktracker.clear-mail.de/tracker/browse/ATARI-15108">ATARI-15108</a>'
+    type: object
+    properties:
+      dkk:
+        type: string
+        description: 'DKK stands for "Dienste- und Karten-spezifisches 
+Kennzeichen" and consists of a string, which identifies exactly one personal 
+ID (nPA) in the context of a service provider'
+
+  identReviewResultItem:
+    description: 'Infos about processed reviews'
+    type: object
+    properties:
+      identReviewCount:
+         type: integer
+         description: 'Counter of review attempts.'
+      identReviewServiceCenter:
+         type: string
+         description: 'service center, where an ident review took place, e.g. 
+1 DP CSC GmbH, Location Flensburg'
+      identReviewAgentAlias:
+         type: string
+         description: 'shorthand symbol of the agent'
+
+  auditTrailItemResult:
+    description: 'Audit trail of steps processed during video identification.'
+    type: object
+    required:
+      - code
+      - timestamp
+    properties:
+      code:
+        type: integer
+        description: code for a step processed during video identification
+      timestamp:
+        description: 'Timestamp when the step was processed in ISO 8601 format 
+e.g. 2016-01-28T23:59:59+01:00'
+        type: string
+        format: timestamp
+## Field successful is not used
+#     successful:
+#       type: boolean
+#       description: true if processed step was successful
+
+
+
+  idCardReaderCheck:
+    description: 'Checks performed by the automated ID Card reader during 
+in-store identifications.<br>
+      If present, this object contains at least one failed check.'
+    type: object
+    required:
+      - checkedCategories
+    properties:
+      checkedCategories:
+        description: 'Categories of checks that have been performed, and their 
+status.'
+        type: array
+        items:
+          $ref: '#/definitions/idCardReaderCheckCategories'
+
+
+  idCardReaderCheckCategories:
+    description: 'The category of checks performed and the corresponding 
+status.'
+    type: object
+    properties:
+      name:
+        type: string
+        description: 'Name of the category of checks'
+        enum:
+          - 'Optical Check'
+          - 'Electronic Check'
+          - 'Combined Check'
+          - 'Electronic Advanced Check'
+          - 'MRZ Advanced Check'
+      status:
+        type: string
+        description: 'Status of this category of checks. Set to the "worst" 
+status of the corresponding checks performed.'
+        enum:
+          - 'successful'
+          - 'failed'
+          - 'undetermined'
+          - 'not supported'
+          - 'aborted'
+      failedChecksOfIdCardReader:
+        type: array
+        items:
+          $ref: '#/definitions/failedChecksOfIdCardReader'
+
+  failedChecksOfIdCardReader:
+    description: 'Failed checks reported by the automated ID card reader 
+detected during the in-store identification. Only populated in case of 
+detected annomalies of  the ID card document'
+    type: object
+    required:
+      - checkName
+    properties:
+      checkName:
+        type: string
+        description: name of the specific check that failed
+      subCheckName:
+        type: string
+        description: name of the sub-check which failed, only used for some of the (more complex) checks
+      additionalInformation:
+        type: array
+        description: key-value pairs with additional information for the (sub-)check which failed, only used for some of the (more complex) checks
+        items:
+          $ref: '#/definitions/additionalInformationForIDCardCheck'
+
+  additionalInformationForIDCardCheck:
+    description: 'KEy-value pair with additional information for the failed 
+(sub-)check performend by the automated ID card reader. May e.g. contain about 
+the image type or document side for which the check failed.'
+    type: object
+    required:
+      - key
+      - value
+    properties:
+      key:
+        type: string
+        description: 'name of the property'
+      value:
+        type: string
+        description: 'value of the property, e.g. the document side'
+
+
+
+
+##
+## General Definitions
+##
+
+
+  resultValue:
+    type: object
+    properties:
+      status:
+        type: string
+        description: 'Possible outcomes:<br/>
+          - unchecked: identification before preliminary or final result 
+status, value not checked yet<br>
+          - new: value was not provided by client<br>
+          - match: value as provided by client<br>
+          - change: value was modified during identification process'
+        enum:
+          - 'unchecked'
+          - 'new'
+          - 'match'
+          - 'change'
+      value:
+        type: string
+
+
+
+  identificationMethod:
+    description: 'Method being used for a POSTIDENT identification.'
+    type: string
+    enum:
+      - 'photo'
+      - 'video'
+      - 'npa'
+      - 'basic'
+      - 'comfort'
+      - 'special'
+
+
+  drivingLicenceClass:
+    type: object
+    properties:
+      className:
+          type: string
+      dateIssued:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      dateOfExpiry:
+          description: 'ISO 8601 format: YYYY-MM-DD'
+          type: string
+      restrictions:
+          type: string
+
+
+  accountingData:
+    type: object
+    properties:
+      accountingNumber:
+        description: 'Unique identifier for invoicing (dt. Abrechnungsnummer); 
+also used as identifier of a client configuration and printed on the PI coupon 
+for an identification in the post office (basic)'
+        type: string
+      accountingProduct:
+        description: 'Product displayed on invoice, e.g. Postident Video'
+        type: string
+
+
+
+  multiPlatformUrl:
+    description: URLs to redirect the user from a certain endpoint in the PI system back to your webserver or mobile app
+    type: object
+    properties:
+      webUrl:
+        type: string
+        description: URL for web browser
+      iOSUrl:
+        type: string
+        description: URL for iOS app
+      androidUrl:
+        type: string
+        description: URL for Android app
+
+
+  webStart:
+    description: Web-specific information to start and restart the case
+    type: object
+    properties:
+      caseURL:
+        type: string
+        description: 'URL to start or restart the case in a web browser. Use 
+this url to redirect the browser of the user or send him an email with this 
+URL. If you send an email, do not forget to inform the user on the expiration 
+date of the URL.'
+
+
+  appStart:
+    description: App-specific information to start and restart the case
+    type: object
+    properties:
+      packageName:
+        type: string
+        description: Information to check, whether the POSTIDENT app is installed or not in order to trigger the installation process and transmit the caseId after installation.
+      caseUrlScheme:
+        type: string
+        description: Information to open POSTIDENT app in case it is already installed and transmit the caseId.
+
+  piSystemStatus:
+    description: Describes the current status of PI system
+    type: object
+    properties:
+      status:
+        type: string
+        enum:
+        - 'OK' # System is still running normally.
+        - 'NOK' # System is currently unavailable.
+        description: Status of PI system
+
+  errors:
+    type: object
+    properties:
+      apiversion:
+        type: string
+      errors:
+        type: array
+        items:
+          $ref: '#/definitions/error'
+
+
+  error:
+    type: object
+    properties:
+      errorcode:
+        type: string
+      reason:
+        type: string
+      key:
+        type: string
+      message:
+        type: string
